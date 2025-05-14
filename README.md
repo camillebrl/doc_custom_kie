@@ -1,6 +1,6 @@
 # Pipeline d'extraction d'informations dans les documents
 
-Pipeline pour étiqueter vos documents (informations clés à extraire), augmenter vos données, affiner LayoutLMv3 dessus, effectuer des inférences sur de nouvelles données et visualiser les informations clés extraites ! Pas besoin de GPU pour entraîner et faire tourner le modèle final en inférence.
+Pipeline pour étiqueter vos documents (informations clés à extraire), augmenter vos données, finetuner LayoutLMv3 dessus, effectuer des inférences sur de nouvelles données et visualiser les informations clés extraites ! Pas besoin de GPU pour entraîner et faire tourner le modèle final en inférence.
 
 - 📄 **Peu de données nécessaires** : seulement une dizaine de documents à labéliser pour de bonnes performances.  
 - 🎨 **Interface de labélisation intuitive** : créez tous les labels dont vous avez besoin, libre à vous de définir précisément les informations clés à extraire.  
@@ -9,6 +9,7 @@ Pipeline pour étiqueter vos documents (informations clés à extraire), augment
 - 🤖 **Fine-tuning d’un Transformer multimodal léger** : adaptez facilement [layoutlmv3-base](https://huggingface.co/microsoft/layoutlmv3-base) de Microsoft à vos documents, sans GPU nécessaire.  
 - 🖥️ **Interface d’inférence modulable** : visualisez directement les informations extraites, ou personnalisez librement le script `inference.py` pour exploiter vos résultats selon vos besoins. Encore une fois, pas de GPU nécessaire pour l'inférence! Utiliser le script simplement en local!
 
+---
 
 ## Lancement de l'outil
 ```shell
@@ -23,6 +24,8 @@ Si tu ne veux lancer que sur l'inférence car tu as déjà un modèle fine-tuné
 make NAME=mon_projet final_inference
 ```
 
+---
+
 ### Workflow de l’outil
 ```mermaid
 flowchart TD
@@ -30,38 +33,7 @@ flowchart TD
   B --> C["inference.py"]
 ```
 
-
-## Introduction de la tâche KIE
-Key Information Extraction (KIE) consiste à détecter et à extraire automatiquement des éléments structurés (champs-clés, entités, paires clé-valeur) à partir de documents variés (formulaires, factures, reçus, etc.). Il s'agit en fait d'une tâche de classification multi-classes des mots issus de l'OCR. 
-
-### Jeux de données et exemples de tâches
-- **FUNSD** (Form Understanding in Noisy Scanned Documents) : extraction de paires clé-valeur depuis des formulaires annotés avec positions de tokens et catégories sémantiques.
-- **SROIE** (Scanned Receipt OCR and Information Extraction) : identification et classification des champs clés (nom du magasin, total, TVA, date) sur des reçus de caisse.
-- **CORD** (Complex Receipt Datasets) : version détaillée de reçus permettant l’extraction d’informations plus diversifiées et la reconnaissance de tables.
-
-Chaque dataset propose une **tâche de classification** (types de champs) et de **localisation** (boîtes englobantes), ou une **tâche générative** (générer directement le JSON de sortie).
-
-Ici, je propose une tâche de KIE "custom", avec les documents & labels au choix!
-
-### Familles de modèles pour la KIE
-Deux grandes catégories de modèles s’affrontent sur ces tâches :
-
-#### 1. Modèles fine-tunés (add heads)
-- **Principe** : partir d’un backbone pré-entraîné (LayoutLMv3, Donut, etc.), ajouter une tête spécialisée (classification, token classification) et fine-tuner sur la tâche cible.
-- **Atouts** : légers, rapides à entraîner (quelques heures sur CPU ou petite GPU), nécessitent peu de ressources matérielles.
-- **Exemples** :
-  - **LayoutLMv3** : modèle multimodal traitant conjointement les tokens textuels, la mise en page (bboxes) et l’information visuelle extraite via une architecture Transformer unifiée.
-  - **LILT (TILT)** : extension de LayoutLM pour la génération de sorties structurées à partir de tokens visuels et textuels, souvent utilisée en mode discriminatif.
-- **Usage typique** : classification de tokens, extraction de paires clé-valeur via softmax sur chaque token.
-
-#### 2. Modèles génératifs (VLLMs)
-- **Principe** : modèles de type « Vision + Language Large Models » qui reçoivent en entrée l’image du document et génèrent séquentiellement le JSON ou la liste des champs.
-- **Atouts** : flexibles, peuvent gérer des sorties hétérogènes et imiter un assistant linguistique pour la documentation.
-- **Exemple** :
-  - **GenKIE** : génère directement les structures de sortie, robuste aux erreurs OCR.
-
-> *Pour une revue détaillée des différentes familles de modèles KIE, voir le papier* [arXiv:2501.02235](https://arxiv.org/pdf/2501.02235).
-
+---
 
 ## 1. annotate.py – Annotation interactive et génération de données
 
@@ -79,7 +51,7 @@ flowchart TD
 Dans **annotate.py**, on propose une application Flask permettant d’annoter **manuellement** des données visuelles en **sélectionnant** directement les bounding boxes détectées par OCR et en choisissant **librement** les labels (totalement customisables) :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}.
 
 - **But principal** : créer un fichier `temp_annot.jsonl` qui servira au **finetuning** du modèle KIE (LayoutLMv3 ou équivalent).  
-- **OCR multicouche** : trois moteurs (EasyOCR, Tesseract, Docling) sont appliqués séquentiellement puis combinés sans chevauchement pour obtenir la reconstruction la plus **précise** possible des mots et de leurs boîtes :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3}.   
+- **OCR par zones intelligemment détectées et "zoomées"** : On utilise [pytesseract](https://github.com/madmaze/pytesseract) pour extraire le texte dans des zones textuelles du document détectées à l'aide du Gradient de Sobel sur l'image. On "zoom" chacune de ces zones afin d'avoir un résultat de Tesseract le plus précis possible. On reconstruit ensuite les bbox à l'échelle de l'image de base.
 - **Annotation manuelle** :  
   - L’utilisateur sélectionne dans l’interface **toutes** les bounding boxes qu’il souhaite annoter, puis entre le label de son choix (100 % customisable).  
   - Le système génère automatiquement des **tags BIO** :  
@@ -133,14 +105,49 @@ Le script **inference.py** ne fonctionne **qu’après** le fine-tuning lancé d
 1. **Chargement du modèle** : on récupère `label_mappings.json` et le modèle LayoutLMv3ForTokenClassification entraîné, via `LayoutLMv3Processor` (avec OCR désactivé), sur le device CPU/GPU disponible :contentReference[oaicite:8]{index=8}:contentReference[oaicite:9]{index=9}.  
 2. **Pipeline de prédiction** :  
    - Téléversement d’une image via l’interface Flask.  
-   - **OCR combiné** : Docling d’abord, puis Tesseract pour ajouter les mots manquants.  
+   - **OCR par zones intelligemment détectées et "zoomées"** : On utilise [pytesseract](https://github.com/madmaze/pytesseract) pour extraire le texte dans des zones textuelles du document détectées à l'aide du Gradient de Sobel sur l'image. On "zoom" chacune de ces zones afin d'avoir un résultat de Tesseract le plus précis possible. On reconstruit ensuite les bbox à l'échelle de l'image de base.
    - **Normalisation** des boîtes au format 0–1000 attendu par LayoutLMv3.  
    - **Inférence** : passage dans le modèle pour obtenir un label par token, puis agrégation des premiers tokens de chaque mot.  
 3. **Post-traitement** :  
-   - **Fusion BIO** : on regroupe séquentiellement les a
+   - **Fusion BIO** : usion BIO : on regroupe séquentiellement les annotations B-/I- pour reconstruire les entités complètes (e.g., B-ORG + I-ORG = entité ORG). 
+   - **Nettoyage des entités** : on fusionne les entités très proches ou chevauchantes du même type (distance < 50 pixels) et on filtre les redondances.
+4. **Visualisation finale** : on génère une image annotée et un JSON listant les entités reconnues et leur type.
 
 ---
 
+
+## NB: Introduction de la tâche KIE
+Key Information Extraction (KIE) consiste à détecter et à extraire automatiquement des éléments structurés (champs-clés, entités, paires clé-valeur) à partir de documents variés (formulaires, factures, reçus, etc.). Il s'agit en fait d'une tâche de classification multi-classes des mots issus de l'OCR. 
+
+### Jeux de données et exemples de tâches
+- **FUNSD** (Form Understanding in Noisy Scanned Documents) : extraction de paires clé-valeur depuis des formulaires annotés avec positions de tokens et catégories sémantiques.
+- **SROIE** (Scanned Receipt OCR and Information Extraction) : identification et classification des champs clés (nom du magasin, total, TVA, date) sur des reçus de caisse.
+- **CORD** (Complex Receipt Datasets) : version détaillée de reçus permettant l’extraction d’informations plus diversifiées et la reconnaissance de tables.
+
+Chaque dataset propose une **tâche de classification** (types de champs) et de **localisation** (boîtes englobantes), ou une **tâche générative** (générer directement le JSON de sortie).
+
+Ici, je propose une tâche de KIE "custom", avec les documents & labels au choix!
+
+### Familles de modèles pour la KIE
+Deux grandes catégories de modèles s’affrontent sur ces tâches :
+
+#### 1. Modèles fine-tunés (add heads)
+- **Principe** : partir d’un backbone pré-entraîné (LayoutLMv3, Donut, etc.), ajouter une tête spécialisée (classification, token classification) et fine-tuner sur la tâche cible.
+- **Atouts** : légers, rapides à entraîner (quelques heures sur CPU ou petite GPU), nécessitent peu de ressources matérielles.
+- **Exemples** :
+  - **LayoutLMv3** : modèle multimodal traitant conjointement les tokens textuels, la mise en page (bboxes) et l’information visuelle extraite via une architecture Transformer unifiée.
+  - **LILT (TILT)** : extension de LayoutLM pour la génération de sorties structurées à partir de tokens visuels et textuels, souvent utilisée en mode discriminatif.
+- **Usage typique** : classification de tokens, extraction de paires clé-valeur via softmax sur chaque token.
+
+#### 2. Modèles génératifs (VLLMs)
+- **Principe** : modèles de type « Vision + Language Large Models » qui reçoivent en entrée l’image du document et génèrent séquentiellement le JSON ou la liste des champs.
+- **Atouts** : flexibles, peuvent gérer des sorties hétérogènes et imiter un assistant linguistique pour la documentation.
+- **Exemple** :
+  - **GenKIE** : génère directement les structures de sortie, robuste aux erreurs OCR.
+
+> *Pour une revue détaillée des différentes familles de modèles KIE, voir le papier* [arXiv:2501.02235](https://arxiv.org/pdf/2501.02235).
+
+---
 
 ## Licence
 
