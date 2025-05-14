@@ -1,0 +1,74 @@
+[project]
+name = "doc_custom_extraction"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Camille",email = "camille.barboule@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10, <4.0"
+dependencies = [
+    "datasets (>=3.5.0,<4.0.0)",
+    "numpy (>=1.24.4,<2.0.0)",
+    "transformers (>=4.42.0,<4.43.0)",
+    "evaluate (>=0.4.3,<0.5.0)",
+    "torchvision (>=0.22.0,<0.23.0)",
+    "scikit-learn (>=1.6.1,<2.0.0)",
+    "pytesseract (>=0.3.13,<0.4.0)",
+    "pillow (>=11.2.1,<12.0.0)",
+    "albumentations (>=2.0.5,<3.0.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
+    "dotenv (>=0.9.9,<0.10.0)",
+    "wandb (>=0.19.10,<0.20.0)",
+    "levenshtein (>=0.27.1,<0.28.0)",
+    "seqeval (>=1.2.2,<2.0.0)",
+    "pdf2image (>=1.17.0,<2.0.0)",
+    "accelerate (>=1.6.0,<2.0.0)",
+    "tensorboard (>=2.19.0,<3.0.0)",
+    "jsonlines (>=4.0.0,<5.0.0)",
+    "matplotlib (>=3.10.3,<4.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "doc_custom_extraction", from = "src"}]
+
+[tool.poetry.group.commit.dependencies]
+pre-commit = "^4.0.1"
+
+[tool.poetry.group.lint.dependencies]
+mypy = "^1.13.0"
+ruff = "^0.9.3"
+
+
+[tool.poetry.group.ui.dependencies]
+flask = "^3.1.0"
+opencv-python = "^4.11.0.86"
+
+[tool.ruff]
+# max line length
+line-length = 119
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle
+    "F", # Pyflakes
+    "UP", # pyupgrade
+    "B", # flake8-bugbear
+    "D", # pydocstyle,
+    "I", # isorte,
+    "C4", # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+# Never enforce `E501` (line length violations).
+ignore = ["C901", "E501", "E741", "F402", "F823"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

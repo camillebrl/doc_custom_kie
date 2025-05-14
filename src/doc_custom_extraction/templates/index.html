@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Document Annotation Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .panel { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .annotation-container { display: flex; gap: 20px; }
+        .image-panel { flex: 3; }
+        .labels-panel { flex: 1; min-width: 200px; display: flex; flex-direction: column; }
+        .image-container { position: relative; width: 100%; max-width: 800px; margin: 0 auto; }
+        .image-container img { width: 100%; display: block; }
+        #boxes-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .ocr-box { position: absolute; border: 2px solid rgba(255,153,51,0.8); background: rgba(255,153,51,0.2); cursor: pointer; pointer-events: all; z-index: 10; }
+        .ocr-box:hover:not(.labeled):not(.selected) { border: 2px solid rgba(255,0,0,0.8) !important; background: rgba(255,0,0,0.3) !important; }
+        .ocr-box.labeled { border: 3px solid red !important; background-color: rgba(255, 0, 0, 0.3) !important; }
+        .ocr-box.labeled:hover { border: 3px solid red !important; background-color: rgba(255, 0, 0, 0.3) !important; }
+        .ocr-box.selected { border: 3px solid green !important; background-color: rgba(0, 255, 0, 0.3) !important; }
+        .coord-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+        input[readonly], textarea[readonly] { background: #f9f9f9; }
+        .annotations-list { margin-top: 20px; max-height: 300px; overflow-y: auto; }
+        .annotation-item { padding: 5px 0; border-bottom: 1px solid #eee; }
+        button { padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; margin-bottom: 5px; }
+        button:hover { background: #45a049; }
+        .button-secondary { background: #2196F3; }
+        .button-secondary:hover { background: #0b7dda; }
+        .button-danger { background: #f44336; }
+        .button-danger:hover { background: #d32f2f; }
+        .label-container { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; }
+        .label-badge { display: block; padding: 8px 10px; background: #f0f0f0; border-radius: 4px; margin-bottom: 5px; cursor: pointer; }
+        .label-badge.selected { background: #4CAF50; color: white; }
+        .tooltip { position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 5px; border-radius: 3px; font-size: 12px; z-index: 100; pointer-events: none; max-width: 200px; }
+        #new-label-input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 5px; }
+        .label-management { margin-top: 15px; display: flex; flex-direction: column; gap: 10px; }
+        #loading-spinner { display: none; margin: 10px auto; text-align: center; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 2s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #message-area { padding: 10px; margin: 10px 0; display: none; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        /* New styles for the file select dropdown */
+        .file-select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: #fff;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .file-select:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 3px rgba(76, 175, 80, 0.5);
+        }
+        .file-select option {
+            padding: 5px;
+        }
+        
+        .action-buttons { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+        #export-btn { width: 100%; font-size: 16px; padding: 12px; font-weight: bold; }
+        .export-container { margin-top: auto; }
+        /* Added styles for multiple selection */
+        .selection-info { 
+            margin: 15px 0; 
+            padding: 10px; 
+            background: #f9f9f9; 
+            border-left: 4px solid #4CAF50; 
+        }
+        #selected-boxes-container {
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 5px;
+            background: #fff;
+        }
+        .selected-box-item {
+            padding: 5px;
+            margin: 2px 0;
+            background: #f5f5f5;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .selected-box-item button {
+            padding: 2px 6px;
+            margin: 0;
+            font-size: 12px;
+        }
+        .selection-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .file-select option:first-of-type {
+            background-color: #e6ffe6;
+        }
+        .file-select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-family: Arial, sans-serif;
+            background-color: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+
+        .file-select:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 4px rgba(76, 175, 80, 0.5);
+        }
+
+        .file-select option {
+            padding: 8px 12px;
+        }
+
+        .file-select option:first-child {
+            font-weight: bold;
+            background-color: #f0f8ff;
+        }
+        .file-select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-family: Arial, sans-serif;
+            background-color: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+
+        .file-select:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 4px rgba(76, 175, 80, 0.5);
+        }
+
+        .file-select option {
+            padding: 8px 12px;
+        }
+
+        .file-select option:first-child {
+            font-weight: bold;
+            background-color: #f0f8ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>Text Annotation Tool</h1>
+
+    <div id="message-area"></div>
+
+    <div class="panel">
+        <h2>Upload File</h2>
+        <form id="upload-form" action="/upload_only" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg" required>
+            <button type="submit">Upload File</button>
+        </form>
+        <div id="loading-spinner">
+            <div class="spinner"></div>
+            <p>Processing image...</p>
+        </div>
+        
+        <div id="file-list">
+            <h3>Available Files</h3>
+            <div id="files-container">
+                <!-- Files dropdown will be added here -->
+            </div>
+            <div style="margin-top: 10px;">
+                <button id="process-btn" class="button-secondary" style="width: 100%;">Process for Annotation</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="annotation-area" class="panel" style="display:none;">
+        <h2>Image Preview & OCR Regions</h2>
+        <p id="current-file-path" style="font-style:italic; font-size:0.9em;"></p>
+        
+        <div class="annotation-container">
+            <div class="image-panel">
+                <div class="image-container">
+                    <img id="current-image" src="" alt="Uploaded image">
+                    <div id="boxes-overlay"></div>
+                    <div id="tooltip" class="tooltip" style="display:none;"></div>
+                </div>
+                <p>Dimensions: <span id="image-dimensions"></span></p>
+
+                <!-- Selection info panel for multi-selection -->
+                <div class="selection-info">
+                    <h3>Selected Items</h3>
+                    <p id="selection-status">No boxes selected. Click on text boxes to select them.</p>
+                    <div id="selected-boxes-container"></div>
+                    <!-- <div class="selection-controls">
+                        <button id="clear-selection-btn" class="button-danger">Clear Selection</button>
+                    </div> -->
+                </div>
+                
+                <div class="coord-inputs">
+                    <div><label>X1:</label><input type="number" id="start-x" readonly></div>
+                    <div><label>Y1:</label><input type="number" id="start-y" readonly></div>
+                    <div><label>X2:</label><input type="number" id="end-x" readonly></div>
+                    <div><label>Y2:</label><input type="number" id="end-y" readonly></div>
+                </div>
+                <div>
+                    <label>Text:</label>
+                    <textarea id="text-input" rows="2" readonly></textarea>
+                </div>
+
+                <h3>Saved Annotations</h3>
+                <div id="annotations-container" class="annotations-list"></div>
+            </div>
+            
+            <div class="labels-panel">
+                <h3>Labels</h3>
+                <div id="labels-container" class="label-container">
+                    <!-- Les labels seront ajoutés ici dynamiquement -->
+                </div>
+                
+                <div class="label-management">
+                    <input type="text" id="new-label-input" placeholder="New label name">
+                    <button id="add-label-btn" class="button-secondary">+ Add Label</button>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="save-btn" style="width: 100%;">Save Annotation</button>
+                </div>
+                
+                <div class="export-container">
+                    <button id="export-btn" class="button-secondary">Save to Annotation File</button>
+                    <!-- Nouveau bouton Finish -->
+                    <button id="finish-btn" class="button-danger" style="width: 100%; margin-top: 10px;">Finish & Clean</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialisation des labels par défaut - modified to exclude B- and I- prefixes
+        // These will be generated automatically
+        const defaultLabels = ["PATIENT.LASTNAME","PATIENT.FISTNAME","PATIENT.ADRESS","PATIENT.SEX","PATIENT.TEL","PATIENT.BIRTHDAY","PATIENT.BORNCITY","PATIENT.INS","PATIENT.IPP","DOCTOR.FIRSTNAME","DOCTOR.LASTNAME","DOCTOR.RPPS","DOCTOR.JOB", "FACILITY.NAME","FACILITY.ADRESS","FACILITY.TEL","ACT.DATE", "ACT.TYPE","DOC.TYPE"];
+        let currentLabels = [...defaultLabels];
+        let selectedLabel = "O";
+        
+        const uploadForm = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const annotationArea = document.getElementById('annotation-area');
+        const currentImage = document.getElementById('current-image');
+        const boxesOverlay = document.getElementById('boxes-overlay');
+        const startX = document.getElementById('start-x');
+        const startY = document.getElementById('start-y');
+        const endX = document.getElementById('end-x');
+        const endY = document.getElementById('end-y');
+        const textInput = document.getElementById('text-input');
+        const saveBtn = document.getElementById('save-btn');
+        const exportBtn = document.getElementById('export-btn');
+        const processBtn = document.getElementById('process-btn');
+        const finishBtn = document.getElementById('finish-btn');
+        const annotationsContainer = document.getElementById('annotations-container');
+        const imageDimensions = document.getElementById('image-dimensions');
+        const tooltip = document.getElementById('tooltip');
+        const labelsContainer = document.getElementById('labels-container');
+        const newLabelInput = document.getElementById('new-label-input');
+        const addLabelBtn = document.getElementById('add-label-btn');
+        const messageArea = document.getElementById('message-area');
+        const filesContainer = document.getElementById('files-container');
+        const currentFilePath = document.getElementById('current-file-path');
+        const selectedBoxesContainer = document.getElementById('selected-boxes-container');
+        const selectionStatus = document.getElementById('selection-status');
+        // const clearSelectionBtn = document.getElementById('clear-selection-btn');
+
+        let currentImagePath = '';
+        let allFiles = [];
+        let currentAnnotations = [];
+        let imageHeight = 0;
+        window.selectedBox = null;
+        
+        // Array to store multiple selected boxes for BIO tagging
+        let selectedBoxes = [];
+        // Pour stocker les timestamps d'upload des fichiers
+        let fileUploadTimes = {};
+        // pour suivre le dernier fichier uploadé
+        let lastUploadedFile = '';
+
+        // Intercepter le formulaire d'upload pour le traiter en AJAX
+        uploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            if (fileInput.files.length === 0) {
+                showMessage('Please select a file to upload', 'error');
+                return;
+            }
+            
+            // Récupérer le nom du fichier en cours d'upload
+            const uploadingFileName = fileInput.files[0].name;
+            console.log("Uploading file:", uploadingFileName);
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            // Afficher le spinner
+            loadingSpinner.style.display = 'block';
+            
+            fetch('/upload_only', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Mettre à jour la liste des fichiers
+                    if (data.files) {
+                        allFiles = data.files;
+                        
+                        // Chercher le fichier qui vient d'être uploadé en fonction de son nom
+                        const uploadedFile = allFiles.find(file => {
+                            // Extraire juste le nom du fichier du chemin complet
+                            const fileName = file.split('/').pop();
+                            // Vérifier si ce nom correspond au fichier qu'on vient d'uploader
+                            // PDF transformé en images : le nom contiendra le nom original
+                            return fileName === uploadingFileName || fileName.includes(uploadingFileName.replace(/\.[^/.]+$/, ""));
+                        });
+                        
+                        if (uploadedFile) {
+                            console.log("Found uploaded file in list:", uploadedFile);
+                            // Définir ce fichier comme le dernier uploadé
+                            lastUploadedFile = uploadedFile;
+                            currentImagePath = lastUploadedFile;
+                            
+                            // Enregistrer le timestamp d'upload
+                            fileUploadTimes[uploadedFile] = Date.now();
+                            
+                            // Stockage local du dernier fichier uploadé pour persistance
+                            localStorage.setItem('lastUploadedFile', lastUploadedFile);
+                        } else {
+                            console.log("Could not find the uploaded file in the list. Searching for:", uploadingFileName);
+                            console.log("Available files:", allFiles);
+                            
+                            // Si c'est un PDF, chercher les pages générées
+                            if (uploadingFileName.toLowerCase().endsWith('.pdf')) {
+                                const pdfBaseName = uploadingFileName.replace(/\.[^/.]+$/, ""); // Nom sans extension
+                                
+                                // Chercher tous les fichiers qui contiennent ce nom de base
+                                const pdfPages = allFiles.filter(file => {
+                                    const fileName = file.split('/').pop();
+                                    return fileName.includes(pdfBaseName);
+                                });
+                                
+                                if (pdfPages.length > 0) {
+                                    console.log("Found PDF pages:", pdfPages);
+                                    // Utiliser la première page comme dernier fichier uploadé
+                                    lastUploadedFile = pdfPages[0];
+                                    currentImagePath = lastUploadedFile;
+                                    
+                                    // Enregistrer le timestamp d'upload pour toutes les pages
+                                    const now = Date.now();
+                                    pdfPages.forEach(file => {
+                                        fileUploadTimes[file] = now;
+                                    });
+                                    
+                                    localStorage.setItem('lastUploadedFile', lastUploadedFile);
+                                }
+                            }
+                        }
+                        
+                        renderFileList();
+                    }
+                    
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage(data.message || 'Upload failed', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('An error occurred during upload', 'error');
+            })
+            .finally(() => {
+                loadingSpinner.style.display = 'none';
+            });
+        });
+
+        // Bouton de traitement pour l'annotation - MODIFIÉ
+        processBtn.addEventListener('click', function() {
+            if (allFiles.length === 0) {
+                showMessage('No files available to process', 'error');
+                return;
+            }
+            
+            // Get the selected file from the dropdown
+            const fileSelect = document.getElementById('file-select');
+            const fileToProcess = fileSelect && fileSelect.value ? fileSelect.value : allFiles[0];
+            
+            if (!fileToProcess) {
+                showMessage('Please select a file to process', 'error');
+                return;
+            }
+            
+            // Update current image path
+            currentImagePath = fileToProcess;
+            
+            // Display the spinner
+            loadingSpinner.style.display = 'block';
+            
+            // Check if OCR exists already
+            fetch(`/check_ocr_status/${encodeURIComponent(fileToProcess)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.has_ocr) {
+                    // If OCR exists, load the image with annotations
+                    loadImage(fileToProcess);
+                    showMessage(`OCR already available (${data.word_count} words)`, 'success');
+                } else {
+                    // Otherwise, process OCR
+                    return fetch(`/process_ocr/${encodeURIComponent(fileToProcess)}`)
+                        .then(response => response.json())
+                        .then(ocrData => {
+                            if (ocrData.status === 'success') {
+                                loadImage(fileToProcess);
+                                showMessage(ocrData.message, 'success');
+                            } else {
+                                showMessage(ocrData.message || 'OCR processing failed', 'error');
+                            }
+                        });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('An error occurred during processing', 'error');
+            })
+            .finally(() => {
+                loadingSpinner.style.display = 'none';
+            });
+        });
+
+        // Bouton d'export des annotations
+        exportBtn.addEventListener('click', function() {
+            // Vérifier qu'il y a une image sélectionnée
+            if (!currentImagePath) {
+                showMessage('No image selected', 'error');
+                return;
+            }
+            
+            // Afficher le spinner
+            loadingSpinner.style.display = 'block';
+            
+            // 1. D'abord appeler l'API pour exporter l'annotation actuelle au format JSONL
+            fetch('/export_single_annotation', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ image_path: currentImagePath })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // 2. Ensuite, lancer la data augmentation
+                    return fetch('/generate_augmentations', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ image_path: currentImagePath, n_augmentations: 3 })
+                    }).then(augResponse => augResponse.json());
+                } else {
+                    throw new Error(data.message || 'Export failed');
+                }
+            })
+            .then(augData => {
+                if (augData.status === 'success') {
+                    // Mettre à jour la liste des fichiers avec les nouvelles images augmentées
+                    fetch('/get_files')
+                        .then(response => response.json())
+                        .then(files => {
+                            if (Array.isArray(files) && files.length > 0) {
+                                allFiles = files;
+                                renderFileList();
+                            }
+                        });
+                    
+                    showMessage(`Annotations saved to file and ${augData.augmented_images.length} augmented images generated!`, 'success');
+                } else {
+                    showMessage(augData.message || 'Data augmentation failed', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage(`An error occurred: ${error.message}`, 'error');
+            })
+            .finally(() => {
+                loadingSpinner.style.display = 'none';
+            });
+        });
+
+        // Gestionnaire d'événements pour le bouton Finish
+        finishBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to finish and clean the annotation file? This will close the application.')) {
+                // Afficher le spinner
+                loadingSpinner.style.display = 'block';
+                
+                // Appeler l'API pour nettoyer le fichier et fermer l'application
+                fetch('/finish', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showMessage(data.message, 'success');
+                        // Afficher un message final
+                        setTimeout(() => {
+                            alert('Annotation complete! The application will now close.');
+                        }, 500);
+                    } else {
+                        showMessage(data.message || 'Finish operation failed', 'error');
+                        loadingSpinner.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showMessage('An error occurred during finish operation', 'error');
+                    loadingSpinner.style.display = 'none';
+                });
+            }
+        });
+
+        // // Clear Selection button handler
+        // clearSelectionBtn.addEventListener('click', function() {
+        //     clearSelection();
+        // });
+
+        function addClearSelectionButton() {
+            // Trouver le conteneur pour le bouton
+            const selectionInfo = document.querySelector('.selection-info');
+            
+            // Vérifier si le bouton existe déjà
+            if (document.getElementById('clear-selection-btn')) {
+                return; // Le bouton existe déjà, ne pas le recréer
+            }
+            
+            // Créer un conteneur pour les contrôles si nécessaire
+            let controlsContainer = selectionInfo.querySelector('.selection-controls');
+            if (!controlsContainer) {
+                controlsContainer = document.createElement('div');
+                controlsContainer.className = 'selection-controls';
+                selectionInfo.appendChild(controlsContainer);
+            }
+            
+            // Créer le bouton
+            const btn = document.createElement('button');
+            btn.id = 'clear-selection-btn';
+            btn.className = 'button-danger';
+            btn.textContent = 'Clear Selection';
+            
+            // Ajouter le gestionnaire d'événements
+            btn.addEventListener('click', clearSelection);
+            
+            // Ajouter le bouton au conteneur
+            controlsContainer.appendChild(btn);
+        }
+
+        function clearSelection() {
+            // Vider le tableau des boîtes sélectionnées
+            selectedBoxes = [];
+            
+            // Mettre à jour l'affichage des boîtes sélectionnées - CRUCIAL POUR VIDER "SELECTED ITEMS"
+            updateSelectedBoxesView();
+            
+            // Retirer la classe 'selected' de toutes les boîtes
+            document.querySelectorAll('.ocr-box.selected').forEach(box => {
+                box.classList.remove('selected');
+            });
+            
+            // Réinitialiser les champs d'affichage
+            startX.value = '';
+            startY.value = '';
+            endX.value = '';
+            endY.value = '';
+            textInput.value = '';
+        }
+
+        
+        function updateSelectedBoxesView() {
+            // Vider complètement le conteneur des boîtes sélectionnées
+            selectedBoxesContainer.innerHTML = '';
+            
+            // Mettre à jour le message de statut
+            if (selectedBoxes.length === 0) {
+                selectionStatus.textContent = 'No boxes selected. Click on text boxes to select them.';
+                
+                // Supprimer le bouton Clear Selection s'il existe
+                const clearBtn = document.getElementById('clear-selection-btn');
+                if (clearBtn) {
+                    clearBtn.parentElement.removeChild(clearBtn);
+                }
+                return;
+            }
+            
+            selectionStatus.textContent = `${selectedBoxes.length} box(es) selected`;
+            
+            // Ajouter le bouton Clear Selection
+            addClearSelectionButton();
+            
+            // Recréer les éléments pour chaque boîte sélectionnée
+            selectedBoxes.forEach((boxInfo, index) => {
+                const boxItem = document.createElement('div');
+                boxItem.className = 'selected-box-item';
+                
+                // Display the text of the box
+                const boxText = document.createElement('span');
+                boxText.textContent = `${index + 1}. "${boxInfo.text}" [${boxInfo.bbox.join(',')}]`;
+                boxItem.appendChild(boxText);
+                
+                // Add a remove button
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'button-danger';
+                removeBtn.textContent = 'Remove';
+                removeBtn.addEventListener('click', () => {
+                    // Remove from the selected boxes array
+                    selectedBoxes.splice(index, 1);
+                    // Update the view
+                    updateSelectedBoxesView();
+                    
+                    // Remove selected class from the corresponding OCR box
+                    document.querySelectorAll('.ocr-box').forEach(box => {
+                        const boxX1 = parseInt(box.dataset.x1);
+                        const boxY1 = parseInt(box.dataset.y1);
+                        const boxX2 = parseInt(box.dataset.x2);
+                        const boxY2 = parseInt(box.dataset.y2);
+                        
+                        if (boxX1 === boxInfo.bbox[0] && boxY1 === boxInfo.bbox[1] && 
+                            boxX2 === boxInfo.bbox[2] && boxY2 === boxInfo.bbox[3]) {
+                            box.classList.remove('selected');
+                        }
+                    });
+                });
+                
+                boxItem.appendChild(removeBtn);
+                selectedBoxesContainer.appendChild(boxItem);
+            });
+        }
+
+        function showMessage(message, type) {
+            messageArea.textContent = message;
+            messageArea.className = type;
+            messageArea.style.display = 'block';
+            
+            // Masquer le message après 5 secondes
+            setTimeout(() => {
+                messageArea.style.display = 'none';
+            }, 5000);
+        }
+
+        // Fonction renderFileList modifiée pour trier les fichiers par date d'upload (plus récent en premier)
+        function renderFileList() {
+            filesContainer.innerHTML = '';
+            
+            if (!allFiles || allFiles.length === 0) {
+                const emptyMsg = document.createElement('p');
+                emptyMsg.textContent = 'No files uploaded yet';
+                emptyMsg.style.fontStyle = 'italic';
+                filesContainer.appendChild(emptyMsg);
+                return;
+            }
+            
+            // Créer l'élément select
+            const selectElement = document.createElement('select');
+            selectElement.id = 'file-select';
+            selectElement.className = 'file-select';
+            
+            // Trier les fichiers par date d'upload (plus récent en premier)
+            const sortedFiles = [...allFiles].sort((a, b) => {
+                const timeA = fileUploadTimes[a] || 0;
+                const timeB = fileUploadTimes[b] || 0;
+                
+                // Si les deux ont des timestamps, trier par ordre décroissant (plus récent en premier)
+                if (timeA && timeB) {
+                    return timeB - timeA;
+                }
+                
+                // Sinon, si un seul a un timestamp, le mettre en premier
+                if (timeA) return -1;
+                if (timeB) return 1;
+                
+                // Pour les fichiers sans timestamp, les laisser dans leur ordre original
+                return allFiles.indexOf(a) - allFiles.indexOf(b);
+            });
+            
+            // Forcer le dernier fichier uploadé en première position s'il existe
+            if (lastUploadedFile && sortedFiles.includes(lastUploadedFile)) {
+                // Supprimer le fichier de sa position actuelle
+                const index = sortedFiles.indexOf(lastUploadedFile);
+                if (index > 0) {  // S'il n'est pas déjà en première position
+                    sortedFiles.splice(index, 1);
+                    sortedFiles.unshift(lastUploadedFile);
+                }
+            }
+            
+            // Ajouter les options à la liste déroulante
+            sortedFiles.forEach((file, index) => {
+                const option = document.createElement('option');
+                option.value = file;
+                
+                // Extraire juste le nom du fichier du chemin complet
+                const fileName = file.split('/').pop();
+                
+                // Si c'est le fichier actuel, le sélectionner
+                if (file === currentImagePath) {
+                    option.selected = true;
+                }
+                
+                // Si c'est le dernier fichier uploadé, ajouter une indication
+                if (file === lastUploadedFile) {
+                    option.textContent = `${fileName}`;
+                    option.style.fontWeight = 'bold';
+                    option.style.color = '#1a8cff';
+                } else {
+                    option.textContent = fileName;
+                }
+                
+                selectElement.appendChild(option);
+            });
+            
+            // Ajouter l'événement de changement
+            selectElement.addEventListener('change', () => {
+                currentImagePath = selectElement.value;
+                // Mettre à jour l'affichage du chemin du fichier
+                currentFilePath.textContent = `File: ${currentImagePath}`;
+            });
+            
+            filesContainer.appendChild(selectElement);
+        }
+
+        // Fonction pour rafraîchir l'affichage des annotations existantes - NOUVELLE FONCTION
+        function refreshAnnotationDisplay() {
+            if (!currentImagePath) return;
+            
+            fetch(`/annotations/${encodeURIComponent(currentImagePath)}`)
+            .then(response => response.json())
+            .then(annotations => {
+                currentAnnotations = annotations;
+                renderAnnotations(annotations);
+                
+                // Marquer toutes les boîtes annotées après un court délai
+                // pour s'assurer que les boîtes sont bien dessinées
+                setTimeout(() => {
+                    markAnnotatedBoxes(annotations);
+                }, 100);
+            })
+            .catch(error => {
+                console.error('Error refreshing annotations:', error);
+            });
+        }
+
+        // Fonction loadImage modifiée pour utiliser refreshAnnotationDisplay
+        function loadImage(path) {
+            currentImagePath = path;
+            currentFilePath.textContent = `File: ${path}`;
+            annotationArea.style.display = 'block';
+            
+            // Clear any previous selection
+            clearSelection();
+            
+            // Mettre à jour l'état actif dans la liste des fichiers
+            document.querySelectorAll('.file-item').forEach(item => {
+                item.classList.remove('active');
+                const fileName = path.split('/').pop();
+                if (item.textContent === fileName) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // Réinitialiser les champs de sélection
+            startX.value = '';
+            startY.value = '';
+            endX.value = '';
+            endY.value = '';
+            textInput.value = '';
+            window.selectedBox = null;
+            
+            // Array to store multiple selected boxes for BIO tagging
+            let selectedBoxes = [];
+            
+            // Réinitialiser l'overlay des boîtes
+            boxesOverlay.innerHTML = '';
+            
+            const imageUrl = `/image/${encodeURIComponent(path)}`;
+            console.log("Loading image:", imageUrl);
+            
+            // Charger l'image
+            currentImage.onload = async () => {
+                try {
+                    // Obtenir les dimensions de l'image
+                    const dims = await fetch(`/dimensions/${encodeURIComponent(path)}`).then(r => r.json());
+                    imageHeight = dims.height;
+                    imageDimensions.textContent = `${dims.width}×${dims.height}`;
+                    
+                    // Obtenir les résultats OCR
+                    console.log("Fetching OCR results for:", path);
+                    const ocr = await fetch(`/ocr_results/${encodeURIComponent(path)}`).then(r => r.json());
+                    console.log("OCR results:", ocr);
+                    
+                    if (ocr && ocr.bboxes && ocr.bboxes.length > 0) {
+                        drawOcrBoxes(ocr, dims.height);
+                    } else {
+                        console.warn("No OCR boxes found");
+                        showMessage('No OCR results found. Use "Process for Annotation" to run OCR.', 'error');
+                    }
+                    
+                    // Obtenir les annotations existantes
+                    refreshAnnotationDisplay(); // Utiliser la nouvelle fonction
+                } catch (error) {
+                    console.error('Error loading image data:', error);
+                    showMessage('Error loading image data', 'error');
+                }
+            };
+            
+            currentImage.onerror = () => {
+                console.error('Error loading image:', imageUrl);
+                showMessage('Failed to load image', 'error');
+            };
+            
+            currentImage.src = imageUrl;
+        }
+
+        // Fonction markAnnotatedBoxes améliorée
+        function markAnnotatedBoxes(annotations) {
+            if (!annotations || annotations.length === 0) return;
+            
+            console.log("Marking annotated boxes", annotations.length, "annotations");
+            const allBoxes = document.querySelectorAll('.ocr-box');
+            
+            annotations.forEach(ann => {
+                const [x1, y1, x2, y2] = ann.bbox;
+                
+                // Chercher parmi toutes les boîtes OCR
+                allBoxes.forEach(box => {
+                    // Comparer les coordonnées exactes
+                    if (parseInt(box.dataset.x1) === x1 && parseInt(box.dataset.y1) === y1 && 
+                        parseInt(box.dataset.x2) === x2 && parseInt(box.dataset.y2) === y2) {
+                        console.log("Found matching box for annotation:", ann.text);
+                        box.classList.add('labeled');
+                        
+                        // Forcer les styles directement
+                        box.style.border = '3px solid red';
+                        box.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+                    }
+                });
+            });
+        }
+
+        function drawOcrBoxes(ocr, imageHeight) {
+            boxesOverlay.innerHTML = '';
+            
+            if (!ocr || !ocr.bboxes || !Array.isArray(ocr.bboxes) || ocr.bboxes.length === 0) {
+                console.warn('No OCR boxes to draw');
+                return;
+            }
+            
+            const natW = currentImage.naturalWidth;
+            const natH = currentImage.naturalHeight;
+            const dispW = currentImage.clientWidth;
+            const dispH = currentImage.clientHeight;
+            
+            if (natW === 0 || natH === 0) {
+                console.warn('Image dimensions not available yet');
+                setTimeout(() => drawOcrBoxes(ocr, imageHeight), 100); // Réessayer dans 100ms
+                return;
+            }
+            
+            console.log("Drawing OCR boxes. Image dims:", natW, natH, "Display dims:", dispW, dispH, "Image height:", imageHeight);
+            
+            const scaleX = dispW / natW;
+            const scaleY = dispH / natH;
+            
+            boxesOverlay.style.pointerEvents = 'auto';
+            
+            ocr.bboxes.forEach((bbox, i) => {
+                if (!bbox || bbox.length !== 4) {
+                    console.warn("Invalid bbox:", bbox);
+                    return;
+                }
+                
+                // Récupérer les coordonnées originales
+                const [x1, origY1, x2, origY2] = bbox;
+                
+                // INVERSION DE L'AXE Y : Calculer les coordonnées inversées pour l'affichage
+                // Dans l'image, Y=0 est en haut, mais nous voulons que Y=0 soit en bas
+                const y1 = imageHeight - origY2; // Inverser Y1 avec la hauteur de l'image
+                const y2 = imageHeight - origY1; // Inverser Y2 avec la hauteur de l'image
+                
+                console.log(`Box ${i}: Original [${x1},${origY1},${x2},${origY2}], Inverted [${x1},${y1},${x2},${y2}]`);
+                
+                const box = document.createElement('div');
+                box.className = 'ocr-box';
+                box.style.left = `${x1 * scaleX}px`;
+                box.style.top = `${y1 * scaleY}px`; // Utiliser Y inversé
+                box.style.width = `${(x2 - x1) * scaleX}px`;
+                box.style.height = `${Math.abs(y2 - y1) * scaleY}px`; // Utiliser la valeur absolue pour s'assurer que la hauteur est positive
+                
+                const wordText = ocr.words[i] || '[No text]';
+                box.title = wordText;
+                
+                // Stocker les coordonnées originales dans le dataset
+                box.dataset.x1 = x1;
+                box.dataset.y1 = origY1; // Stocker les coordonnées originales, non inversées
+                box.dataset.x2 = x2;
+                box.dataset.y2 = origY2; // Stocker les coordonnées originales, non inversées
+                box.dataset.text = wordText;
+                box.dataset.index = i;
+                
+                // Mouseover pour afficher le tooltip
+                box.addEventListener('mouseover', (e) => {
+                    tooltip.textContent = wordText;
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = `${e.pageX + 10}px`;
+                    tooltip.style.top = `${e.pageY + 10}px`;
+                });
+                
+                box.addEventListener('mousemove', (e) => {
+                    tooltip.style.left = `${e.pageX + 10}px`;
+                    tooltip.style.top = `${e.pageY + 10}px`;
+                });
+                
+                box.addEventListener('mouseout', () => {
+                    tooltip.style.display = 'none';
+                });
+                
+                // Modified click handler for multi-selection
+                box.addEventListener('click', () => {
+                    // Check if the box is already labeled
+                    if (box.classList.contains('labeled')) {
+                        showMessage('This box is already labeled', 'error');
+                        return;
+                    }
+                    
+                    // Toggle selection state for this box
+                    if (box.classList.contains('selected')) {
+                        // If already selected, unselect it
+                        box.classList.remove('selected');
+                        
+                        // Remove from selectedBoxes array
+                        selectedBoxes = selectedBoxes.filter(item => {
+                            return !(item.bbox[0] === parseInt(box.dataset.x1) && 
+                                    item.bbox[1] === parseInt(box.dataset.y1) && 
+                                    item.bbox[2] === parseInt(box.dataset.x2) && 
+                                    item.bbox[3] === parseInt(box.dataset.y2));
+                        });
+                    } else {
+                        // Add to selection
+                        box.classList.add('selected');
+                        
+                        // Add to selectedBoxes array
+                        selectedBoxes.push({
+                            bbox: [parseInt(box.dataset.x1), parseInt(box.dataset.y1), 
+                                  parseInt(box.dataset.x2), parseInt(box.dataset.y2)],
+                            text: box.dataset.text,
+                            index: parseInt(box.dataset.index)
+                        });
+                    }
+                    
+                    // Update the selection display
+                    updateSelectedBoxesView();
+                    
+                    // Update the coordinate display with the current box
+                    startX.value = box.dataset.x1;
+                    startY.value = box.dataset.y1;
+                    endX.value = box.dataset.x2;
+                    endY.value = box.dataset.y2;
+                    textInput.value = box.dataset.text;
+                    
+                    // Store reference to the most recently clicked box
+                    window.selectedBox = box;
+                });
+                
+                boxesOverlay.appendChild(box);
+            });
+            
+            console.log(`Drew ${ocr.bboxes.length} OCR boxes`);
+        }
+
+        // Modified saveBtn.addEventListener for BIO tagging
+        saveBtn.addEventListener('click', async () => {
+            // Check if we have any selected boxes
+            if (selectedBoxes.length === 0) {
+                showMessage('Please select at least one text box', 'error');
+                return;
+            }
+            if (selectedLabel === "O") {
+                // If the label is "O" (Outside), we can process just one box at a time
+                if (selectedBoxes.length > 1) {
+                    showMessage('For "O" label, please select only one box at a time', 'error');
+                    return;
+                }
+                
+                const box = selectedBoxes[0];
+                
+                // Create payload for single annotation
+                const payload = {
+                    image_path: currentImagePath,
+                    x1: box.bbox[0],
+                    y1: box.bbox[1],
+                    x2: box.bbox[2],
+                    y2: box.bbox[3],
+                    text: box.text,
+                    label: "O", // Keep as "O"
+                    save_to_file: false
+                };
+                
+                try {
+                    const resp = await fetch('/annotate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const data = await resp.json();
+                    
+                    if (data.status === 'success') {
+                        handleSuccessfulAnnotation(data);
+                        
+                        // Appel à clearSelection après une annotation réussie
+                        clearSelection();  // <-- IMPORTANT: cette ligne efface automatiquement la sélection
+                        
+                        // Vider aussi les annotations affichées
+                        annotationsContainer.innerHTML = '';
+                        currentAnnotations = [];
+                        
+                        showMessage('Annotation saved successfully!', 'success');
+                    } else {
+                        showMessage(data.message, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error saving annotation:', error);
+                    showMessage('Error saving annotation', 'error');
+                }
+            } else {
+                // For any other label, apply BIO tagging
+                // Sort the selected boxes by their index to maintain reading order
+                const sortedBoxes = [...selectedBoxes].sort((a, b) => a.index - b.index);
+                
+                // Create array to track successful annotations
+                const annotationPromises = [];
+                
+                // Process each box with the appropriate BIO prefix
+                for (let i = 0; i < sortedBoxes.length; i++) {
+                    const box = sortedBoxes[i];
+                    
+                    // Determine if this is the first box (B-) or a continuation (I-)
+                    const bioPrefix = i === 0 ? 'B-' : 'I-';
+                    const bioLabel = bioPrefix + selectedLabel;
+                    
+                    // Create payload
+                    const payload = {
+                        image_path: currentImagePath,
+                        x1: box.bbox[0],
+                        y1: box.bbox[1],
+                        x2: box.bbox[2],
+                        y2: box.bbox[3],
+                        text: box.text,
+                        label: bioLabel,
+                        save_to_file: false
+                    };
+                    
+                    // Add to our list of annotation requests
+                    annotationPromises.push(fetch('/annotate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    }).then(resp => resp.json()));
+                }
+                
+                // Wait for all annotations to complete
+                try {
+                    const results = await Promise.all(annotationPromises);
+                    
+                    const allSuccessful = results.every(result => result.status === 'success');
+                    
+                    if (allSuccessful) {
+                        const lastResult = results[results.length - 1];
+                        handleSuccessfulAnnotation(lastResult);
+                        
+                        // Vider aussi les annotations affichées
+                        annotationsContainer.innerHTML = '';
+                        currentAnnotations = [];
+                        
+                        if (sortedBoxes.length > 1) {
+                            showMessage(`Successfully annotated ${sortedBoxes.length} boxes with BIO tagging.`, 'success');
+                        }
+                        
+                        // Appel à clearSelection après une annotation réussie
+                        clearSelection();  // <-- IMPORTANT: cette ligne efface automatiquement la sélection
+                    } else {
+                        const errorMsg = results.find(r => r.status === 'error')?.message || 'Error saving annotations';
+                        showMessage(errorMsg, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error saving annotations:', error);
+                    showMessage('Error saving annotations', 'error');
+                }
+            }
+        });
+
+        // Helper function to handle successful annotation response
+        function handleSuccessfulAnnotation(data) {
+            currentAnnotations = data.annotations;
+            renderAnnotations(data.annotations);
+            
+            // Mark all selected boxes as labeled
+            document.querySelectorAll('.ocr-box.selected').forEach(box => {
+                // Remove selected class
+                box.classList.remove('selected');
+                // Add labeled class
+                box.classList.add('labeled');
+                // Force styling
+                box.style.border = '3px solid red';
+                box.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+            });
+            
+            // Reset selection
+            selectedBoxes = [];
+            updateSelectedBoxesView();
+            
+            // Reset form fields
+            startX.value = '';
+            startY.value = '';
+            endX.value = '';
+            endY.value = '';
+            textInput.value = '';
+            window.selectedBox = null;
+            
+            // Si des images augmentées ont été générées, mettre à jour la liste des fichiers
+            if (data.augmented_images && data.augmented_images.length > 0) {
+                setTimeout(() => {
+                    // Mettre à jour la liste des fichiers
+                    fetch('/get_files')
+                        .then(response => response.json())
+                        .then(files => {
+                            if (Array.isArray(files) && files.length > 0) {
+                                allFiles = files;
+                                renderFileList();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error refreshing file list:', error);
+                        });
+                }, 1000); // Attendre 1 seconde pour que les fichiers soient bien écrits
+            }
+        }
+
+        function renderAnnotations(list) {
+            annotationsContainer.innerHTML = '';
+            
+            if (!list || list.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.textContent = 'No annotations yet';
+                emptyMsg.style.fontStyle = 'italic';
+                emptyMsg.style.color = '#666';
+                annotationsContainer.appendChild(emptyMsg);
+                return;
+            }
+            
+            // Group annotations by entity using the BIO tagging scheme
+            // Any B- starts a new group, I- tags follow their preceding B- tag
+            const groupedAnnotations = [];
+            let currentGroup = null;
+            
+            list.forEach(ann => {
+                const label = ann.label || 'O';
+                
+                // If this is a B- tag or an O tag, start a new group
+                if (label.startsWith('B-') || label === 'O') {
+                    // If we have a current group, add it to our results
+                    if (currentGroup) {
+                        groupedAnnotations.push(currentGroup);
+                    }
+                    
+                    // Create a new group
+                    currentGroup = {
+                        baseLabel: label === 'O' ? 'O' : label.substring(2), // Remove B- prefix
+                        annotations: [ann],
+                        text: ann.text
+                    };
+                } 
+                // If this is an I- tag, add to the current group if it exists and matches
+                else if (label.startsWith('I-') && currentGroup && 
+                        label.substring(2) === currentGroup.baseLabel) {
+                    currentGroup.annotations.push(ann);
+                    currentGroup.text += ' ' + ann.text;
+                }
+                // If this is an I- tag but doesn't match current group or no group exists
+                else if (label.startsWith('I-')) {
+                    // This is an orphaned I- tag, create a new group for it
+                    if (currentGroup) {
+                        groupedAnnotations.push(currentGroup);
+                    }
+                    
+                    currentGroup = {
+                        baseLabel: label.substring(2), // Remove I- prefix
+                        annotations: [ann],
+                        text: ann.text,
+                        isOrphanedI: true
+                    };
+                }
+                // Any other case, treat as a standalone annotation
+                else {
+                    if (currentGroup) {
+                        groupedAnnotations.push(currentGroup);
+                    }
+                    
+                    currentGroup = {
+                        baseLabel: label,
+                        annotations: [ann],
+                        text: ann.text
+                    };
+                }
+            });
+            
+            // Don't forget the last group
+            if (currentGroup) {
+                groupedAnnotations.push(currentGroup);
+            }
+            
+            // Render grouped annotations
+            groupedAnnotations.forEach((group, idx) => {
+                const div = document.createElement('div');
+                div.className = 'annotation-item';
+                
+                // Determine label display
+                let labelDisplay = '';
+                if (group.baseLabel === 'O') {
+                    labelDisplay = '[O]';
+                } else {
+                    labelDisplay = group.annotations.length > 1 ? 
+                        `[${group.baseLabel}]` : 
+                        `[${group.annotations[0].label}]`;
+                }
+                
+                // Make warning for orphaned I- tags
+                if (group.isOrphanedI) {
+                    labelDisplay += ' (⚠️ orphaned I- tag)';
+                }
+                
+                // Determine coords display
+                const coordsDisplay = group.annotations.length > 1 ? 
+                    'multiple boxes' : 
+                    `[${group.annotations[0].bbox.join(',')}]`;
+                
+                div.textContent = `${idx+1}: ${group.text} ${labelDisplay} @ ${coordsDisplay}`;
+                annotationsContainer.appendChild(div);
+            });
+        }
+        
+        function renderLabels() {
+            labelsContainer.innerHTML = '';
+            
+            // Add the "O" label first
+            const oLabelBadge = document.createElement('div');
+            oLabelBadge.className = 'label-badge';
+            if ('O' === selectedLabel) {
+                oLabelBadge.classList.add('selected');
+            }
+            oLabelBadge.textContent = 'O';
+            oLabelBadge.addEventListener('click', () => {
+                selectedLabel = 'O';
+                // Update the display
+                document.querySelectorAll('.label-badge').forEach(badge => {
+                    badge.classList.remove('selected');
+                });
+                oLabelBadge.classList.add('selected');
+            });
+            labelsContainer.appendChild(oLabelBadge);
+            
+            // Skip "O" in the currentLabels array and don't show the B-/I- prefixes
+            // in the label selection interface, as they'll be added automatically
+            currentLabels.filter(label => label !== 'O')
+                .forEach(label => {
+                    // Skip labels that already start with B- or I-
+                    if (label.startsWith('B-') || label.startsWith('I-')) {
+                        return;
+                    }
+                    
+                    const labelBadge = document.createElement('div');
+                    labelBadge.className = 'label-badge';
+                    if (label === selectedLabel) {
+                        labelBadge.classList.add('selected');
+                    }
+                    labelBadge.textContent = label;
+                    labelBadge.addEventListener('click', () => {
+                        selectedLabel = label;
+                        // Update the display
+                        document.querySelectorAll('.label-badge').forEach(badge => {
+                            badge.classList.remove('selected');
+                        });
+                        labelBadge.classList.add('selected');
+                    });
+                    labelsContainer.appendChild(labelBadge);
+                });
+        }
+        
+        function addNewLabel() {
+            const newLabel = newLabelInput.value.trim();
+            if (newLabel && !currentLabels.includes(newLabel)) {
+                currentLabels.push(newLabel);
+                renderLabels();
+                newLabelInput.value = '';
+                
+                // Optionnellement, sélectionner automatiquement le nouveau label
+                selectedLabel = newLabel;
+                
+                // Sauvegarder le nouveau label côté serveur
+                fetch('/add_label', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ label: newLabel })
+                });
+            } else if (currentLabels.includes(newLabel)) {
+                showMessage('This label already exists!', 'error');
+            }
+        }
+        
+        // Permettre d'ajouter un label en appuyant sur Entrée
+        newLabelInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addNewLabel();
+                e.preventDefault();
+            }
+        });
+        
+        // Ajouter un gestionnaire d'événements pour le bouton d'ajout de label
+        addLabelBtn.addEventListener('click', addNewLabel);
+        
+        // Initialiser les labels au chargement de la page
+        document.addEventListener('DOMContentLoaded', () => {
+            renderLabels();
+            
+            // Get the list of files
+            fetch('/get_files')
+                .then(response => response.json())
+                .then(files => {
+                    if (Array.isArray(files) && files.length > 0) {
+                        allFiles = files;
+                        renderFileList();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading file list:', error);
+                });
+            
+            // Load existing labels
+            fetch('/get_labels')
+                .then(response => response.json())
+                .then(labels => {
+                    if (Array.isArray(labels) && labels.length > 0) {
+                        // Merge default labels with existing labels
+                        const uniqueLabels = new Set([...defaultLabels, ...labels.filter(l => 
+                            !l.startsWith('B-') && !l.startsWith('I-'))]);
+                        currentLabels = Array.from(uniqueLabels);
+                        renderLabels();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading labels:', error);
+                });
+                
+            // Check if there are already uploaded files
+            const files = {{ files|tojson }};
+            if (files && files.length > 0) {
+                allFiles = files;
+                renderFileList();
+            }
+        });
+    </script>
+</body>
+</html>

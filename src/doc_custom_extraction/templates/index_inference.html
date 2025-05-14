@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LayoutLMv3 Inference</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        .result-container {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .image-container {
+            flex: 1;
+            min-width: 300px;
+            margin-right: 20px;
+        }
+        .entities-container {
+            flex: 1;
+            min-width: 300px;
+        }
+        .entity-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .error-message {
+            color: red;
+            margin-top: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">LayoutLMv3 Inference</h1>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Télécharger une image</h5>
+                <div class="mb-3">
+                    <input class="form-control" type="file" id="formFile" accept="image/*">
+                </div>
+                <button class="btn btn-primary" id="uploadBtn">Analyser l'image</button>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Traitement en cours...</p>
+                </div>
+                
+                <div class="error-message" id="errorMessage"></div>
+            </div>
+        </div>
+        
+        <div class="result-container" id="resultContainer" style="display:none;">
+            <div class="image-container">
+                <h5>Image analysée</h5>
+                <img id="resultImage" src="" alt="Résultat de l'analyse" class="img-fluid">
+            </div>
+            
+            <div class="entities-container">
+                <h5>Entités détectées</h5>
+                <div id="entitiesList"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('uploadBtn').addEventListener('click', function() {
+            const fileInput = document.getElementById('formFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showError('Veuillez sélectionner une image à analyser.');
+                return;
+            }
+            
+            // Préparer les données
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Afficher le chargement
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('resultContainer').style.display = 'none';
+            
+            // Envoyer la requête
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Cacher le chargement
+                document.getElementById('loading').style.display = 'none';
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                // Afficher l'image résultat
+                document.getElementById('resultImage').src = 'data:image/png;base64,' + data.image;
+                
+                // Afficher les entités
+                const entitiesList = document.getElementById('entitiesList');
+                entitiesList.innerHTML = '';
+                
+                data.entities.forEach(entity => {
+                    const entityDiv = document.createElement('div');
+                    entityDiv.className = 'entity-item';
+                    entityDiv.style.backgroundColor = entity.color + '20'; // Couleur avec faible opacité
+                    entityDiv.style.borderLeft = '4px solid ' + entity.color;
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = 'fw-bold';
+                    labelSpan.textContent = entity.label + ': ';
+                    
+                    const wordsSpan = document.createElement('span');
+                    wordsSpan.textContent = entity.words.join(', ');
+                    
+                    entityDiv.appendChild(labelSpan);
+                    entityDiv.appendChild(wordsSpan);
+                    entitiesList.appendChild(entityDiv);
+                });
+                
+                // Afficher le conteneur de résultats
+                document.getElementById('resultContainer').style.display = 'flex';
+            })
+            .catch(error => {
+                document.getElementById('loading').style.display = 'none';
+                showError('Une erreur est survenue lors du traitement: ' + error.message);
+            });
+        });
+        
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
