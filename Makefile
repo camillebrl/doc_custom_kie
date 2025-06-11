@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 
-NAME ?= results_$(shell date +%s)
+TIMESTAMP := $(shell date +%s)
+NAME ?= results_$(TIMESTAMP)
 
 .PHONY: help deps annotate_data finetuning_model final_inference all
 
